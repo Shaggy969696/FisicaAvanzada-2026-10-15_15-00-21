@@ -61,6 +61,12 @@
     4. **Visualizador Simétrico de Mordazas (`Pinza Bilateral`)** que anima en vivo el cierre de ambos dedos (`Target` vs `Real`) sobre el bloque central e indica cuándo hay agarre activo por fricción.
   - **Panel de Telemetría y Diagnóstico (Panel Derecho):** Tarjetas con barras comparativas dobles (`Target` vs `Real`) por cada articulación e **Inclinómetro / Diana Pendular 2D** para visualizar la oscilación `(SwingY, SwingZ)` del `SphericalJoint` pasivo.
   - **Resaltado 3D en Vivo (`UIControlHoverHighlight.cs`):** Al pasar el cursor por una tarjeta de control o presionar sus teclas (`A/D`, `W/S`, `Q/E`, `Z/X`), la pieza 3D correspondiente de la grúa se ilumina sutilmente mediante `MaterialPropertyBlock`.
+  - **Cámara Orbital de Seguimiento sin Oscilación Pasiva (`Assets/Scripts/Mechanics/GravityBatteryCameraController.cs`):**
+    - Acompaña suavemente el giro de `BrazoPluma` manteniendo un ángulo diagonal/lateral (`58°` por defecto, distancia `12.2 m`) que encuadra la grúa completa en la zona central de la pantalla (despejada entre los paneles HMI izquierdo y derecho).
+    - Sigue a la pinza tomando como referencia exclusiva el nodo `EjeCabestrante` (`offsetVerticalPinzaSinOscilar = -1.75 m`), **excluyendo por completo la oscilación pendular natural** del `CabezalPinza` (`SphericalJoint` pasivo) y de los hijos solidarios (`ChasisGarra` y mordazas).
+  - **Indicador de Sombra / Plomada Vertical de Aterrizaje (`Assets/Scripts/Mechanics/GripperDropIndicator.cs`):**
+    - Proyecta en tiempo real (usando `Physics.RaycastNonAlloc` sin asignaciones de memoria en GC) un marco exterior (`0.68 x 0.68 m`), un disco de sombra y una línea de plomada vertical directamente debajo de la pinza (`EjeCabestrante`).
+    - Ignora automáticamente todos los colliders de la grúa y **todos los bloques de carga grises (`Rigidbody`)**, de manera que la sombra se proyecta siempre en el piso o plataforma directamente debajo de los bloques tanto antes de agarrarlos (enmarcando su base) como durante el traslado.
 
 ### Fase 5: Prueba WebGL Temprana — LISTA PARA EJECUTAR
 - [x] Automatización en menú `Simulador -> Batería de Gravedad -> 3. Configurar y Compilar Prueba WebGL (Fase 5)` (desactiva compresión conflictiva para itch.io y genera la carpeta `Build/WebGL`).

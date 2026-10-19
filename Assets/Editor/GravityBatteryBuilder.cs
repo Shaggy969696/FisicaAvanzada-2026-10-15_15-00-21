@@ -131,8 +131,8 @@ namespace FisicaAvanzada.Editor
             // 3. Construir la Interfaz Gráfica HMI Distribuida (Controles Espaciales + Telemetría Target vs Real)
             BuildTelemetryUI(controller, enableDrives);
 
-            // 4. Posicionar cámara principal
-            SetupMainCamera();
+            // 4. Posicionar y configurar cámara principal con seguimiento orbital sin oscilación pasiva
+            SetupMainCamera(controller);
 
             EditorSceneManager.MarkSceneDirty(SceneManager.GetActiveScene());
         }
@@ -375,8 +375,89 @@ namespace FisicaAvanzada.Editor
             controller.targetCabestranteMetros = 0.0f;
             controller.targetGarraMetros = 0.0f;
 
+            // Crear indicador visual de sombra / proyección vertical debajo de la pinza
+            BuildGripperDropIndicator(baseTorre.transform, ejeCabestrante.transform, chasisGarra.transform);
+
             Selection.activeGameObject = baseTorre;
             return controller;
+        }
+
+        private static void BuildGripperDropIndicator(Transform raizGrua, Transform ejeCabestrante, Transform chasisGarra)
+        {
+            Material shadowOuterMat = GetOrCreateColorMaterial("Mat_SombraPinza_Exterior", new Color(0.08f, 0.12f, 0.16f, 1f));
+            Material shadowAccentMat = GetOrCreateColorMaterial("Mat_SombraPinza_Acento", new Color(0.18f, 0.85f, 0.52f, 1f));
+
+            GameObject indicatorRoot = new GameObject("IndicadorSombra_Pinza");
+            indicatorRoot.transform.SetParent(raizGrua, false);
+            indicatorRoot.transform.localPosition = Vector3.zero;
+            indicatorRoot.transform.localRotation = Quaternion.identity;
+            indicatorRoot.transform.localScale = Vector3.one;
+
+            GameObject surfaceMarker = new GameObject("MarcadorSuperficie");
+            surfaceMarker.transform.SetParent(indicatorRoot.transform, false);
+
+            // Disco oscuro de sombra proyectada en el piso/plataforma (sobresale de la base de 0.60m del bloque)
+            Transform discoSombra = AddVisualPrimitive(
+                surfaceMarker.transform,
+                "Visual_DiscoSombra",
+                PrimitiveType.Cylinder,
+                Vector3.zero,
+                new Vector3(0.95f, 0.006f, 0.95f),
+                shadowOuterMat);
+            MeshRenderer rSombra = discoSombra.GetComponent<MeshRenderer>();
+            if (rSombra != null)
+            {
+                rSombra.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            }
+
+            // Marco rectangular ligeramente exterior a la huella del bloque (0.60 x 0.60 m)
+            // para que se vea rodeando la base del bloque gris cuando la pinza se alinea encima antes de agarrarlo.
+            float grosorLinea = 0.055f;
+            float ladoBloque = 0.68f;
+            float mitad = ladoBloque * 0.5f;
+
+            Transform bordeNorte = AddVisualPrimitive(surfaceMarker.transform, "Visual_HuellaBloque_N", PrimitiveType.Cube,
+                new Vector3(0f, 0.008f, mitad), new Vector3(ladoBloque + grosorLinea, 0.008f, grosorLinea), shadowAccentMat);
+            Transform bordeSur = AddVisualPrimitive(surfaceMarker.transform, "Visual_HuellaBloque_S", PrimitiveType.Cube,
+                new Vector3(0f, 0.008f, -mitad), new Vector3(ladoBloque + grosorLinea, 0.008f, grosorLinea), shadowAccentMat);
+            Transform bordeEste = AddVisualPrimitive(surfaceMarker.transform, "Visual_HuellaBloque_E", PrimitiveType.Cube,
+                new Vector3(mitad, 0.008f, 0f), new Vector3(grosorLinea, 0.008f, ladoBloque), shadowAccentMat);
+            Transform bordeOeste = AddVisualPrimitive(surfaceMarker.transform, "Visual_HuellaBloque_O", PrimitiveType.Cube,
+                new Vector3(-mitad, 0.008f, 0f), new Vector3(grosorLinea, 0.008f, ladoBloque), shadowAccentMat);
+
+            // Punto central de plomada
+            Transform nucleoCentral = AddVisualPrimitive(
+                surfaceMarker.transform,
+                "Visual_PuntoPlomada",
+                PrimitiveType.Cylinder,
+                new Vector3(0f, 0.010f, 0f),
+                new Vector3(0.16f, 0.008f, 0.16f),
+                shadowAccentMat);
+
+            foreach (MeshRenderer mr in surfaceMarker.GetComponentsInChildren<MeshRenderer>())
+            {
+                mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            }
+
+            // Línea guía vertical (plomada visual entre la pinza y la sombra)
+            LineRenderer line = indicatorRoot.AddComponent<LineRenderer>();
+            line.useWorldSpace = true;
+            line.startWidth = 0.025f;
+            line.endWidth = 0.025f;
+            line.positionCount = 2;
+            line.sharedMaterial = shadowAccentMat;
+            line.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            line.receiveShadows = false;
+
+            GripperDropIndicator dropIndicator = indicatorRoot.AddComponent<GripperDropIndicator>();
+            dropIndicator.raizGrua = raizGrua;
+            dropIndicator.ejeCabestrante = ejeCabestrante;
+            dropIndicator.chasisGarra = chasisGarra;
+            dropIndicator.marcadorSuperficie = surfaceMarker.transform;
+            dropIndicator.anilloExterior = discoSombra;
+            dropIndicator.nucleoCentral = nucleoCentral;
+            dropIndicator.lineaGuiaVertical = line;
+            dropIndicator.InicializarCacheColliders();
         }
 
         // =========================================================================
@@ -1578,14 +1659,31 @@ namespace FisicaAvanzada.Editor
             };
         }
 
-        private static void SetupMainCamera()
+        private static void SetupMainCamera(GravityBatteryController controller)
         {
             Camera cam = Camera.main;
-            if (cam != null)
+            if (cam == null)
             {
-                cam.transform.position = new Vector3(7.5f, 6.2f, -5.5f);
-                cam.transform.LookAt(new Vector3(-0.5f, 3.0f, 1.5f));
+                return;
             }
+
+            cam.fieldOfView = 55f;
+
+            GravityBatteryCameraController camController = cam.GetComponent<GravityBatteryCameraController>();
+            if (camController == null)
+            {
+                camController = cam.gameObject.AddComponent<GravityBatteryCameraController>();
+            }
+
+            if (controller != null)
+            {
+                camController.baseTorre = controller.transform;
+                camController.brazoPluma = controller.brazoPluma != null ? controller.brazoPluma.transform : null;
+                camController.carroRiel = controller.carroRiel != null ? controller.carroRiel.transform : null;
+                camController.ejeCabestrante = controller.ejeCabestrante != null ? controller.ejeCabestrante.transform : null;
+            }
+
+            camController.SnapToTarget();
         }
 
         private static void DestroyExistingIfPresent(string objectName)
